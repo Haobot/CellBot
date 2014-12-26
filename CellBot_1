@@ -1,0 +1,238 @@
+/*
+----------------------------------
+ I/O Distribution for Arduino UNO
+----------------------------------
+  0 TxD Hard
+  1 RxD Hard
+  2 RxD Soft
+  3 N/A
+  4 Motor1 Direction
+  5 Motor1 PWM
+  6 Motor2 PWM
+  7 Motor2 Direction
+  8 TxD Soft
+  9 Servo Horizontal
+ 10 Servo Vertical
+*/
+//=====================================================
+#include "SoftwareSerial.h" //Software Serial Port
+#define RxD 2
+#define TxD 8
+SoftwareSerial blueToothSerial(RxD, TxD);
+
+#include "Servo.h" //Servo Library
+Servo servo_h;  // servo_h.attach(9);
+Servo servo_v;  // servo_v.attach(10);
+
+String inString = "";    // string to hold Numatic input
+String inString_F = "";    // string to hold Functional input
+String function = "";
+int currentColor = 0;
+int R_val_1, R_val_2, R_val_3 = 0;
+
+int M1 = 4;    //Motor1 Direction
+int E1 = 5;    //Motor1 PWM
+int E2 = 6;    //Motor2 PWM
+int M2 = 7;    //Motor2 Direction
+
+//=====================================================
+//--------------------
+//  1. BlueTooth
+//--------------------
+void setupBlueToothConnection()   //steup bluetooth connection
+{
+    blueToothSerial.begin(57600); //set BluetoothBee BaudRate to default baud rate 38400
+    Serial.println("\nThe slave bluetooth is inquirable!");
+    delay(1000); // this delay is requiR_val_1.
+    blueToothSerial.flush();
+}
+
+//--------------------
+//  2. Motor Actions
+//--------------------
+void advance(char a, char b)
+{
+    analogWrite (E1, a);      // Speed control with PWM
+    digitalWrite(M1, HIGH);
+    analogWrite (E2, b);
+    digitalWrite(M2, HIGH);
+}
+void back_off (char a, char b)
+{
+    analogWrite (E1, a);
+    digitalWrite(M1, LOW);
+    analogWrite (E2, b);
+    digitalWrite(M2, LOW);
+}
+void turn_L (char a, char b)
+{
+    analogWrite (E1, a);
+    digitalWrite(M1, HIGH);   // LOW for mini Robot turn_L
+    analogWrite (E2, b);
+    digitalWrite(M2, LOW);    // HIGH for mini Robot turn_L
+}
+void turn_R (char a, char b)
+{
+    analogWrite (E1, a);      // HIGH for mini Robot turn_R
+    digitalWrite(M1, LOW);
+    analogWrite (E2, b);
+    digitalWrite(M2, HIGH);   // LOW for mini Robot turn_R
+}
+void allstop (char a, char b)
+{
+    analogWrite (E1, a);
+    digitalWrite(M1, HIGH);
+    analogWrite (E2, b);
+    digitalWrite(M2, HIGH);
+}
+
+//--------------------
+//  3. Motor Control
+//--------------------
+void motorcontrol (String val, int r_motor, int l_motor, int t_motor)   //Scan for motor connect
+{
+    switch (val[0])
+    {
+    case 'w':
+        advance (r_motor, l_motor); 
+        delay(t_motor);
+        allstop (0, 0);
+        break;
+    case 's':
+        back_off (r_motor, l_motor);
+        delay(t_motor);
+        allstop (0, 0);
+        break;
+    case 'a':
+        turn_L (r_motor, l_motor);
+        delay(t_motor);
+        allstop (0, 0);
+        break;
+    case 'd':
+        turn_R (r_motor, l_motor);
+        delay(t_motor);
+        allstop (0, 0);
+        break;
+    case 'e':
+        allstop (0, 0);
+        break;
+    case 'r':// Vertical Sevro
+        servo_v.write(r_motor); // rotate for servo motor
+        break;
+    case 'f':// Horizontal Servo
+        servo_h.write(r_motor); // rotate for servo motor
+        break;
+    }
+    delay(10);
+}
+
+//=====================================================
+//  Main Programme
+//=====================================================
+void setup()
+{
+    // setup I/O for Motors & SoftBT
+    pinMode(RxD, INPUT);      // RxD is 2
+    int i;
+    for (i = 3; i <= 8; i++)
+        pinMode(i, OUTPUT);   // TxD is 8
+
+    // setup I/O for Servos and initializing
+    servo_h.attach(9);
+    servo_v.attach(10);
+    servo_h.write(50);
+    delay(15);
+    servo_v.write(50);
+    delay(15);
+
+    // send an intro:
+    Serial.begin(57600);
+    setupBlueToothConnection();  //set Baud for SoftSerial
+    Serial.println("CellBot is ready to Fight!");
+}
+
+//-----------------------------------------------------
+void loop()
+{
+    int inChar;
+    //-----------------------
+    //  Step.1 Recive Data
+    //-----------------------
+    if (blueToothSerial.available() > 0)  // read BTserial input:
+    {
+        inChar = blueToothSerial.read();
+        delayMicroseconds(50);
+    }
+
+    if (Serial.available() > 0) // read HDserial input:
+    {
+        inChar = Serial.read();
+    }
+
+    //--------------------------------
+    //  Step.2 Convert & Accumulate
+    //--------------------------------
+    if (isalpha(inChar)) // convert Alpha into string & accumulate
+    {
+        inString_F += (char)inChar; // e.g: w s a d r f
+    }
+
+    if (isDigit(inChar)) // convert Number into string & accumulate
+    {
+        inString += (char)inChar; // e.g: 18 68 178
+    }
+
+    //-----------------------------
+    //  Step.3 Save to Characters
+    //-----------------------------
+    if (inChar == ',')    // do every time with a comma
+    {
+        // do something different for each value of currentColor:
+        switch (currentColor)
+        {
+        case 0:
+            function = inString_F;
+            inString_F = ""; // clear the string for new input:
+            break;
+        case 1:
+            R_val_1 = inString.toInt();
+            inString = "";
+            break;
+        case 2:
+            R_val_2 = inString.toInt();
+            inString = "";
+            break;
+        case 3:
+            R_val_3 = inString.toInt();
+            inString = "";
+            break;
+        }
+        currentColor++;
+    }
+
+    //-----------------------------
+    //  Step.4 Conduct with sign
+    //-----------------------------
+    if (inChar == '\n') // conduct I/O with the Newline sign
+    {
+        // motor & servo control
+        motorcontrol(function, R_val_1, R_val_2, R_val_3);
+
+        // print the colors:
+        Serial.print("Function: ");
+        Serial.print(function);
+        Serial.print(", R: ");
+        Serial.print(R_val_1);
+        Serial.print(", L: ");
+        Serial.print(R_val_2);
+        Serial.print(", T: ");
+        Serial.println(R_val_3);
+
+        // clear the string for new input:
+        inString = "";
+        inString_F = "";
+        // reset the color counter:
+        currentColor = 0;
+    }
+
+}
